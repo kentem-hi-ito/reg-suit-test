@@ -1,4 +1,7 @@
 {
+  "scripts": {
+    "compare": "reg-suit run"
+  },
   "devDependencies": {
     "reg-keygen-git-hash-plugin": "^0.14.3",
     "reg-notify-github-plugin": "^0.14.4",
