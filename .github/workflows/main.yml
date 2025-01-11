@@ -1,9 +1,9 @@
 name: Visual Regression Testing (VRT)
 
 on:
-  push:
+  pull_request:
     branches:
-      - main  # mainブランチにプッシュされたときに実行
+      - main # mainブランチへのプルリクエストが来たときに実行
 
 jobs:
   vrt:
@@ -18,7 +18,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: 18  # 必要なNode.jsのバージョンを指定
+          node-version: 18 # 必要なNode.jsのバージョンを指定
 
       # 3. 必要な依存関係をインストール
       - name: Install dependencies
@@ -26,12 +26,39 @@ jobs:
 
       # 4. VRTを実行
       - name: Run Visual Regression Testing
-        run: npm run compare
+        id: run-vrt
+        run: npm run compare | tee vrt-output.txt
 
       # 5. 差分レポートをアーティファクトとして保存（オプション）
-      - name: Upload report artifacts
-        if: always()
-        uses: actions/upload-artifact@v3
+      - name: Extract VRT results
+        id: extract-results
+        run: |
+          changed=$(grep 'Changed items:' vrt-output.txt | awk '{print $3}')
+          new=$(grep 'New items:' vrt-output.txt | awk '{print $3}')
+          deleted=$(grep 'Deleted items:' vrt-output.txt | awk '{print $3}')
+          passed=$(grep 'Passed items:' vrt-output.txt | awk '{print $3}')
+          echo "::set-output name=changed::$changed"
+          echo "::set-output name=new::$new"
+          echo "::set-output name=deleted::$deleted"
+          echo "::set-output name=passed::$passed"
+
+      - name: Comment on PR
+        uses: actions/github-script@v6
         with:
-          name: vrt-report
-          path: .regs/out/  # レポートが保存されるパス（必要に応じて変更）
+          script: |
+            const changed = core.getInput('changed');
+            const newItems = core.getInput('new');
+            const deleted = core.getInput('deleted');
+            const passed = core.getInput('passed');
+
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `Visual Regression Testing Results:\n- Changed items: ${changed}\n- New items: ${newItems}\n- Deleted items: ${deleted}\n- Passed items: ${passed}`
+            });
+
+      # 6. 差分がある場合にマージをブロック
+      - name: Block merge if there are changes
+        if: ${{ steps.extract-results.outputs.changed > 0 }}
+        run: exit 1
